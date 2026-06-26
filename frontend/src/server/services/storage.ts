@@ -14,6 +14,12 @@ function stripBase64Prefix(data: string): string {
   return comma >= 0 ? data.slice(comma + 1) : data;
 }
 
+export function getPublicUrl(path: string): string {
+  const url = getSupabaseUrl();
+  if (!url) return '';
+  return `${url}/storage/v1/object/public/koc-images/${path}`;
+}
+
 export async function createSignedUrl(path: string, expiresIn: number = 3600): Promise<string | null> {
   try {
     const url = getSupabaseUrl();
@@ -111,8 +117,7 @@ export async function uploadImage(
       }
     }
 
-    const signedUrl = await createSignedUrl(path, 365 * 24 * 60 * 60);
-    return signedUrl;
+    return getPublicUrl(path);
   } catch (error) {
     console.error('uploadImage error:', error);
     return null;
