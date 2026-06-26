@@ -28,7 +28,7 @@ export interface Job {
   retryCount: number[];
 }
 
-const MAX_CONCURRENT = 2;
+const MAX_CONCURRENT = 4;
 const MAX_QA_RETRIES = 1;
 const JOB_CLEANUP_AGE = 30 * 60 * 1000;
 

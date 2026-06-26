@@ -254,7 +254,7 @@ Return ONLY valid JSON with keys: settingType, lighting, mood, backgroundDetails
       break;
   }
 
-  const url = getModelUrl(MODELS.PRO);
+  const url = getModelUrl(MODELS.FLASH);
   const body = {
     contents: [{
       role: 'user',

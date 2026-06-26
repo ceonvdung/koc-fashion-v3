@@ -166,34 +166,33 @@ export function buildInstructionPrompt(
   const lines: string[] = [];
 
   if (personCount === 2) {
-    // === TWO PERSON MODE: Each person is a locked table with position ===
-    lines.push('GENERATE: Fashion photograph with 2 persons.');
-    lines.push('COMPOSITION: PERSON1 on the LEFT side. PERSON2 on the RIGHT side. Do NOT swap positions.');
+    lines.push('GENERATE: Fashion photograph with 2 distinct persons.');
+    lines.push('COMPOSITION: PERSON1 on the LEFT. PERSON2 on the RIGHT. Do NOT swap positions.');
 
-    // PERSON1 (LEFT)
-    const p1Parts: string[] = ['face=PERSON_1_FACE_LEFT'];
-    if (contract.person1.outfit || contract.person1.outfitFromFace) p1Parts.push('outfit=PERSON_1_OUTFIT');
-    if (productDescriptions?.person1) p1Parts.push(`product=${productDescriptions.person1}`);
-    const desc1 = faceDescriptions?.person1 ? ` — ${faceDescriptions.person1}` : '';
-    lines.push(`PERSON1 (LEFT): ${p1Parts.join(', ')}.${desc1}`);
-    if (!contract.person1.outfit && contract.person1.outfitFromFace) {
-      lines.push(`PERSON1 OUTFIT: ${contract.person1.outfitFromFace}.`);
+    const face1Desc = faceDescriptions?.person1 ? ` — ${faceDescriptions.person1}` : '';
+    const face2Desc = faceDescriptions?.person2 ? ` — ${faceDescriptions.person2}` : '';
+    lines.push(`BINDING: PERSON1 face ← REFERENCE PERSON_1_FACE_LEFT.${face1Desc} PERSON2 face ← REFERENCE PERSON_2_FACE_RIGHT.${face2Desc} Each face from its own reference ONLY.`);
+
+    lines.push('[PERSON1 — LEFT]');
+    lines.push('Face: REFERENCE PERSON_1_FACE_LEFT — exact face structure.');
+    if (contract.person1.outfit || contract.person1.outfitFromFace) {
+      lines.push(`Outfit: REFERENCE PERSON_1_OUTFIT — ${contract.person1.outfitFromFace || 'match exactly'}.`);
     }
-    if (contract.action1) lines.push(`PERSON1 ACTION: ${contract.action1}.`);
+    if (productDescriptions?.person1) lines.push(`Product: ${productDescriptions.person1}.`);
+    if (contract.action1) lines.push(`Action: ${contract.action1}.`);
+    lines.push('Identity: Must match PERSON_1_FACE_LEFT exactly. No variations.');
 
-    // PERSON2 (RIGHT)
-    const p2Parts: string[] = ['face=PERSON_2_FACE_RIGHT'];
-    if (contract.person2.outfit || contract.person2.outfitFromFace) p2Parts.push('outfit=PERSON_2_OUTFIT');
-    if (productDescriptions?.person2) p2Parts.push(`product=${productDescriptions.person2}`);
-    const desc2 = faceDescriptions?.person2 ? ` — ${faceDescriptions.person2}` : '';
-    lines.push(`PERSON2 (RIGHT): ${p2Parts.join(', ')}.${desc2}`);
-    if (!contract.person2.outfit && contract.person2.outfitFromFace) {
-      lines.push(`PERSON2 OUTFIT: ${contract.person2.outfitFromFace}.`);
+    lines.push('••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••••');
+
+    lines.push('[PERSON2 — RIGHT]');
+    lines.push('Face: REFERENCE PERSON_2_FACE_RIGHT — exact face structure.');
+    if (contract.person2.outfit || contract.person2.outfitFromFace) {
+      lines.push(`Outfit: REFERENCE PERSON_2_OUTFIT — ${contract.person2.outfitFromFace || 'match exactly'}.`);
     }
-    if (contract.action2) lines.push(`PERSON2 ACTION: ${contract.action2}.`);
-
-    // Identity
-    lines.push('IDENTITY: PERSON1 face must match PERSON_1_FACE_LEFT exactly. PERSON2 face must match PERSON_2_FACE_RIGHT exactly. NO blending, NO swapping, NO third face.');
+    if (productDescriptions?.person2) lines.push(`Product: ${productDescriptions.person2}.`);
+    if (contract.action2) lines.push(`Action: ${contract.action2}.`);
+    lines.push('Identity: Must match PERSON_2_FACE_RIGHT exactly. No variations.');
+    lines.push('DIFFERENCE: Must be a COMPLETELY DIFFERENT person from PERSON1. Distinct face, no similarity.');
 
     // Scene
     if (contract.scene === 'image') {
@@ -242,9 +241,11 @@ export function buildInstructionPrompt(
     // CONSTRAINTS
     const c: string[] = [
       'NEVER add extra people.',
-      'NEVER change face identity. PERSON1 face = PERSON_1_FACE_LEFT. PERSON2 face = PERSON_2_FACE_RIGHT.',
-      'Never change outfit: color, pattern, stitch, logo, button, seam must match exactly.',
-      'Never add, remove, or swap products.',
+      'PERSON1 face = REFERENCE PERSON_1_FACE_LEFT only — NEVER generate PERSON1 face from any other reference.',
+      'PERSON2 face = REFERENCE PERSON_2_FACE_RIGHT only — NEVER generate PERSON2 face from any other reference.',
+      'PERSON1 face and PERSON2 face must be COMPLETELY DIFFERENT — NO face swapping, NO face blending, NO similarity between the two.',
+      'Outfit: color, pattern, stitch, logo, button, seam must match exactly.',
+      'NEVER add, remove, or swap products.',
       'NEVER render text, words, labels, captions, or letters.',
     ];
     lines.push(`CONSTRAINTS: ${c.join(' ')}`);
@@ -329,9 +330,9 @@ export function referencesToParts(refs: ReferenceItem[]): PartItem[] {
     } else {
       // Image reference
       const instruction = ref.type === 'face' && ref.owner === 1
-        ? `REFERENCE ${ref.label}: PERSON1 (LEFT side). Use ONLY for the person on the LEFT. Ignore clothing and background.`
+        ? `REFERENCE ${ref.label}: PERSON1 (LEFT person) face ONLY. Match EXACTLY. Do NOT use for any other person.`
         : ref.type === 'face' && ref.owner === 2
-        ? `REFERENCE ${ref.label}: PERSON2 (RIGHT side). Use ONLY for the person on the RIGHT. Ignore clothing and background.`
+        ? `REFERENCE ${ref.label}: PERSON2 (RIGHT person) face ONLY. Match EXACTLY. Do NOT use for any other person.`
         : ref.type === 'outfit' && ref.owner === 1
         ? `REFERENCE ${ref.label} — Worn by PERSON1 (LEFT side). Match color, pattern, material exactly. Ignore any person or body in this photo.`
         : ref.type === 'outfit' && ref.owner === 2
