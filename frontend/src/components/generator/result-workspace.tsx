@@ -48,6 +48,7 @@ export function ResultWorkspace({
 
     for (let i = 0; i < imageUrls.length; i++) {
       const imgUrl = imageUrls[i];
+      if (imgUrl.startsWith('ERROR_SLOT:')) continue;
       const blob = dataURLtoBlob(imgUrl);
       if (blob) {
         zip.file(`koc-image-${i + 1}.png`, blob);
@@ -125,7 +126,7 @@ export function ResultWorkspace({
               className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-[#8B5CF6] to-[#A855F7] text-white text-xs font-medium rounded-lg hover:opacity-90 transition-opacity"
             >
               <Download className="w-3.5 h-3.5" />
-              Tải tất cả ({imageUrls.length})
+              Tải tất cả ({imageUrls.filter(u => !u.startsWith('ERROR_SLOT:')).length})
             </button>
           </div>
         )}

@@ -112,7 +112,7 @@ router.post('/toggle', zValidator('json', z.object({
     if (gen) {
       const images: string[] = Array.isArray(gen.images) ? gen.images : [];
       const img = images[imageIndex];
-      if (img && !img.startsWith('http')) {
+      if (img && !img.startsWith('http') && !img.startsWith('ERROR_SLOT:')) {
         const match = img.match(/^data:([^;]+);base64,(.+)$/);
         if (match) {
           const url = await uploadImage(userId, generationId, imageIndex, match[2], match[1]);

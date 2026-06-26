@@ -2,7 +2,7 @@
 
 import { useState, useEffect, memo } from "react";
 import Image from "next/image";
-import { Heart, Download, Trash2, Expand } from "lucide-react";
+import { Heart, Download, Trash2, Expand, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import api from "@/lib/api";
 import { toast } from "sonner";
@@ -44,6 +44,7 @@ export const ResultCard = memo(function ResultCard({ src = '', index, generation
   const [imgError, setImgError] = useState(false);
   const [fsError, setFsError] = useState(false);
   const aspectClass = RATIO_CLASS[ratio] || 'aspect-[3/4]';
+  const isErrorSlot = src.startsWith('ERROR_SLOT:');
 
   useEffect(() => {
     api.get('/favorites').then(res => {
@@ -64,6 +65,37 @@ export const ResultCard = memo(function ResultCard({ src = '', index, generation
           <span className="px-1.5 py-0.5 bg-[#8B5CF6]/80 text-white text-[10px] rounded font-medium">
             #{index + 1}
           </span>
+        </div>
+      </div>
+    );
+  }
+
+  if (isErrorSlot) {
+    return (
+      <div className="relative rounded-2xl overflow-hidden border border-red-500/30 bg-[#0B1220]">
+        <div className={`${aspectClass} flex flex-col items-center justify-center gap-3`}>
+          <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center">
+            <AlertCircle className="w-6 h-6 text-red-400" />
+          </div>
+          <span className="text-sm text-red-400 font-medium">Ảnh lỗi</span>
+          <span className="text-xs text-[#94A3B8]">Gen lại sau</span>
+        </div>
+        <div className="absolute top-0 left-0 p-1.5">
+          <span className="px-1.5 py-0.5 bg-red-500/80 text-white text-[10px] rounded font-medium">
+            #{index + 1}
+          </span>
+        </div>
+        <div className="relative z-10 flex items-center justify-end px-2 py-1.5 border-t border-white/5">
+          {onDelete && (
+            <button
+              type="button"
+              onClick={() => onDelete(index, generationId)}
+              className="p-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 transition-colors"
+              aria-label="Xóa ảnh lỗi"
+            >
+              <Trash2 className="w-5 h-5" />
+            </button>
+          )}
         </div>
       </div>
     );

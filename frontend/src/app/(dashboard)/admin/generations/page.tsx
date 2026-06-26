@@ -70,8 +70,6 @@ function ImageCard({ item, onDelete }: { item: ImageItem; onDelete: (genId: stri
   const [fullscreen, setFullscreen] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const aspectClass = RATIO_CLASS[item.ratio] || 'aspect-[3/4]';
-  const isBase64 = item.url.startsWith('data:');
-  const imageSrc = isBase64 ? item.url : item.url;
 
   return (
     <>
@@ -81,11 +79,7 @@ function ImageCard({ item, onDelete }: { item: ImageItem; onDelete: (genId: stri
         onMouseLeave={() => setShowDelete(false)}
       >
         <div className={`${aspectClass} relative cursor-pointer`} onClick={() => setFullscreen(true)}>
-          {isBase64 ? (
-            <img src={imageSrc} alt={`Gen ${item.genId} #${item.imgIdx + 1}`} className="object-cover w-full h-full" />
-          ) : (
-            <Image src={imageSrc} alt={`Gen ${item.genId} #${item.imgIdx + 1}`} fill className="object-cover" />
-          )}
+          <Image src={item.url} alt={`Gen ${item.genId} #${item.imgIdx + 1}`} fill className="object-cover" />
         </div>
 
         <div className="absolute top-0 inset-x-0 p-2 flex items-start justify-between">
@@ -138,11 +132,7 @@ function ImageCard({ item, onDelete }: { item: ImageItem; onDelete: (genId: stri
       {fullscreen && (
         <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" onClick={() => setFullscreen(false)}>
           <div className="relative max-w-4xl max-h-[90vh] w-full h-full" onClick={(e) => e.stopPropagation()}>
-            {isBase64 ? (
-              <img src={item.url} alt={`Gen ${item.genId} #${item.imgIdx + 1}`} className="object-contain w-full h-full" />
-            ) : (
-              <Image src={item.url} alt={`Gen ${item.genId} #${item.imgIdx + 1}`} fill className="object-contain" />
-            )}
+            <Image src={item.url} alt={`Gen ${item.genId} #${item.imgIdx + 1}`} fill className="object-contain" />
             <button
               type="button"
               onClick={() => setFullscreen(false)}

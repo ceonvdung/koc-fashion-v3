@@ -29,7 +29,6 @@ export interface Job {
 }
 
 const MAX_CONCURRENT = 4;
-const MAX_QA_RETRIES = 1;
 const JOB_CLEANUP_AGE = 30 * 60 * 1000;
 
 const jobs = new Map<string, Job>();
@@ -74,7 +73,7 @@ export function createJob(id: string, userId: string, variantPartsList: PartItem
     ratio,
     totalSlots: variantPartsList.length,
     completedSlots: 0,
-    images: [],
+    images: new Array(variantPartsList.length).fill(''),
     statusText: 'Preparing references...',
     createdAt: Date.now(),
     inputData,
@@ -154,13 +153,10 @@ async function processOneSlot(job: Job, idx: number): Promise<any> {
     try {
       const images = await generateImageStructured(variantParts, job.ratio);
       if (images.length === 0) throw new Error('No image generated');
-
-      job.images.push(`data:${images[0].mimeType};base64,${images[0].base64}`);
       return images[0];
     } catch (e: any) {
       const msg = e?.message || '';
       if (msg.startsWith('AI_PROVIDER_PAUSED')) {
-        pendingQueue.push(job.id);
         job.statusText = userMessage(msg);
         notifyJob(job.id, { type: 'status', statusText: job.statusText });
         await new Promise(r => setTimeout(r, 5000));
@@ -179,69 +175,72 @@ async function processOneSlot(job: Job, idx: number): Promise<any> {
 }
 
 async function processJob(job: Job): Promise<void> {
-  const { updateGeneration } = await import('../db');
+  const { updateGeneration, incrementDailyUsage } = await import('../db');
+  const failedSlots: number[] = [];
 
-  const idx = job.completedSlots;
+  for (let idx = 0; idx < job.totalSlots; idx++) {
+    try {
+      const generatedImage = await processOneSlot(job, idx);
+      job.images[idx] = `data:${generatedImage.mimeType};base64,${generatedImage.base64}`;
 
-  try {
-    const generatedImage = await processOneSlot(job, idx);
-
-    job.completedSlots++;
-    job.statusText = `Generating ${job.completedSlots}/${job.totalSlots}...`;
-    notifyJob(job.id, { type: 'image', index: idx, total: job.totalSlots, count: job.completedSlots });
-
-    const newStatus = job.completedSlots >= job.totalSlots ? 'completed' : 'processing';
-
-    await updateGeneration(job.id, {
-      images: [...job.images],
-      status: newStatus,
-      metadata: { progress: `Đã tạo ${job.completedSlots}/${job.totalSlots} ảnh` },
-    }).catch(() => {});
-
-    // QA in background — user sees image immediately
-    if (job.inputData && generatedImage) {
-      scheduleQA(job, idx, generatedImage).catch(() => {});
-    }
-
-    if (job.completedSlots >= job.totalSlots) {
-      job.status = 'completed';
-      job.completedAt = Date.now();
-      job.statusText = 'Completed';
-      notifyJob(job.id, { type: 'done', status: 'completed', images: [...job.images] });
+      job.completedSlots = idx + 1;
+      job.statusText = `Generating ${job.completedSlots}/${job.totalSlots}...`;
+      notifyJob(job.id, { type: 'image', index: idx, total: job.totalSlots, count: job.completedSlots });
 
       await updateGeneration(job.id, {
         images: [...job.images],
-        status: 'completed',
-        metadata: { progress: 'Hoàn thành' },
+        status: 'processing',
+        metadata: {
+          progress: failedSlots.length > 0
+            ? `Đã tạo ${job.completedSlots}/${job.totalSlots} ảnh (${failedSlots.length} lỗi)`
+            : `Đã tạo ${job.completedSlots}/${job.totalSlots} ảnh`,
+        },
       }).catch(() => {});
 
-      // Upload images to Supabase Storage (background, non-blocking) — skip when local-dev
-      uploadJobImages(job).catch(() => {});
+      if (job.inputData && generatedImage) {
+        runLogOnlyQA(job, idx, generatedImage).catch(() => {});
+      }
+    } catch (e: any) {
+      job.images[idx] = `ERROR_SLOT:${idx}`;
+      failedSlots.push(idx);
 
-      sseClients.delete(job.id);
-    } else {
-      job.status = 'pending';
-      job.statusText = `Chờ xử lý slot ${job.completedSlots + 1}/${job.totalSlots}`;
-      pendingQueue.push(job.id);
-      notifyJob(job.id, { type: 'status', status: 'pending', statusText: job.statusText });
+      job.completedSlots = idx + 1;
+      job.statusText = `Slot ${idx + 1} lỗi, tiếp tục...`;
+      notifyJob(job.id, { type: 'image', index: idx, total: job.totalSlots, count: job.completedSlots, error: true });
+
+      await updateGeneration(job.id, {
+        images: [...job.images],
+        status: 'processing',
+        metadata: {
+          progress: `Đã tạo ${job.completedSlots}/${job.totalSlots} ảnh (${failedSlots.length} lỗi)`,
+          errorSlots: failedSlots,
+        },
+      }).catch(() => {});
     }
-  } catch (e: any) {
-    const msg = e?.message || '';
-    if (msg.startsWith('AI_PROVIDER_PAUSED')) return;
-
-    job.status = 'failed';
-    job.completedAt = Date.now();
-    job.error = msg;
-    job.statusText = 'Thất bại';
-    notifyJob(job.id, { type: 'error', status: 'failed', error: job.error });
-
-    await updateGeneration(job.id, {
-      status: 'failed',
-      metadata: { progress: 'Failed', error: job.error },
-    }).catch(() => {});
-
-    sseClients.delete(job.id);
   }
+
+  job.status = 'completed';
+  job.completedAt = Date.now();
+  job.statusText = failedSlots.length > 0
+    ? `Hoàn thành (${failedSlots.length}/${job.totalSlots} lỗi)`
+    : 'Hoàn thành';
+
+  await uploadJobImages(job);
+
+  await updateGeneration(job.id, {
+    images: [...job.images],
+    status: 'completed',
+    metadata: {
+      progress: job.statusText,
+      errorSlots: failedSlots.length > 0 ? failedSlots : undefined,
+    },
+  }).catch(() => {});
+
+  const today = new Date().toISOString().split('T')[0];
+  await incrementDailyUsage(job.userId, today).catch(() => {});
+
+  notifyJob(job.id, { type: 'done', status: 'completed', images: [...job.images] });
+  sseClients.delete(job.id);
 }
 
 async function uploadJobImages(job: Job): Promise<void> {
@@ -255,7 +254,7 @@ async function uploadJobImages(job: Job): Promise<void> {
     let hasUpdate = false;
     for (let i = 0; i < job.images.length; i++) {
       const img = job.images[i];
-      if (img && !img.startsWith('http')) {
+      if (img && !img.startsWith('http') && !img.startsWith('ERROR_SLOT:')) {
         const match = img.match(/^data:([^;]+);base64,(.+)$/);
         if (match) {
           const url = await uploadImage(job.userId, job.id, i, match[2], match[1]);
@@ -272,38 +271,15 @@ async function uploadJobImages(job: Job): Promise<void> {
   } catch { console.warn('[JobQueue] Upload images failed'); }
 }
 
-async function scheduleQA(job: Job, idx: number, generatedImage: any): Promise<void> {
+async function runLogOnlyQA(job: Job, idx: number, generatedImage: any): Promise<void> {
   try {
     const { runOutputQA } = await import('./output-qa');
-    const { updateGeneration } = await import('../db');
-    const { generateImageStructured } = await import('./gemini');
-
-    const slotRetries = job.retryCount[idx] || 0;
     const personCount = job.inputData.faceRef2 ? 2 : 1;
     const qaResult = await runOutputQA(generatedImage, job.inputData, personCount);
-
     if (!qaResult.pass) {
-      console.warn(`[QA] Slot ${idx} failed (attempt ${slotRetries + 1}): face=${qaResult.face.pass} outfit=${qaResult.outfit.pass}`);
-
-      if (slotRetries >= MAX_QA_RETRIES) {
-        job.images[idx] = `ERROR_SLOT:${idx}`;
-        await updateGeneration(job.id, {
-          images: [...job.images],
-          metadata: { ...job.inputData?.metadata, errorSlot: idx, errorReason: qaResult.overallReason },
-        }).catch(() => {});
-        return;
-      }
-
-      job.retryCount[idx] = slotRetries + 1;
-      const variantParts = job.variantPartsList[idx];
-      const retryImages = await generateImageStructured(variantParts, job.ratio);
-      if (retryImages.length > 0) {
-        const newData = `data:${retryImages[0].mimeType};base64,${retryImages[0].base64}`;
-        job.images[idx] = newData;
-        await updateGeneration(job.id, { images: [...job.images] }).catch(() => {});
-      }
+      console.warn(`[QA-LOG] Slot ${idx} QA fail: face=${qaResult.face.pass} outfit=${qaResult.outfit.pass} — still showing image`);
     }
   } catch (e) {
-    console.error(`[QA] Background QA failed for slot ${idx}:`, e);
+    console.error(`[QA-LOG] Slot ${idx} QA error:`, e);
   }
 }

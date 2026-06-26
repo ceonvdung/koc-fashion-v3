@@ -80,33 +80,6 @@ export function useGeneration(basePath: string): UseGenerationReturn {
     }
   }, []);
 
-  const startPolling = useCallback((genId: string) => {
-    clearPoll();
-    pollIntervalRef.current = setInterval(async () => {
-      if (abortRef.current || !mountedRef.current) {
-        clearPoll();
-        return;
-      }
-      const done = await pollGeneration(genId);
-      if (done) {
-        clearPoll();
-      }
-    }, 1500);
-  }, [pollGeneration, clearPoll]);
-
-  // Resume polling from URL on mount
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const params = new URLSearchParams(window.location.search);
-    const jobId = params.get('job');
-    if (jobId && !generationId) {
-      setGenerationId(jobId);
-      setResultStatus("processing");
-      startPolling(jobId);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run once on mount
-
   const handleGenerate = useCallback(
     async (payload: Record<string, unknown>) => {
       if (loadingRef.current) return;
@@ -131,12 +104,20 @@ export function useGeneration(basePath: string): UseGenerationReturn {
 
         const genId = data.generationId;
         setGenerationId(genId);
-        if (typeof window !== 'undefined') {
-          const url = new URL(window.location.href);
-          url.searchParams.set('job', genId);
-          window.history.replaceState({}, '', url.toString());
-        }
-        startPolling(genId);
+
+        // Poll for updates until completed or failed
+        clearPoll();
+        pollIntervalRef.current = setInterval(async () => {
+          if (abortRef.current || !mountedRef.current) {
+            clearPoll();
+            return;
+          }
+
+          const done = await pollGeneration(genId);
+          if (done) {
+            clearPoll();
+          }
+        }, 1500);
 
       } catch (err: unknown) {
         clearPoll();
@@ -171,11 +152,6 @@ export function useGeneration(basePath: string): UseGenerationReturn {
     setTotalQuantity(0);
     setProgress(null);
     setError(null);
-    if (typeof window !== 'undefined') {
-      const url = new URL(window.location.href);
-      url.searchParams.delete('job');
-      window.history.replaceState({}, '', url.toString());
-    }
   }, [clearPoll]);
 
   const removeImage = useCallback((index: number) => {
